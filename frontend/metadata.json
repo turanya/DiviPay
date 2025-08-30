@@ -1,0 +1,5 @@
+{
+  "name": "DiviPay",
+  "description": "An expense-splitting web app where users can create groups, add members, record expenses, and see how much each member owes or gets back.",
+  "requestFramePermissions": []
+}
