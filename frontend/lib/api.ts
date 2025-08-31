@@ -1,17 +1,16 @@
 import { Expense } from '../types';
 
-// Use environment variable for production, fallback to localhost for development
+// Use correct environment variable name
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
-console.log('API Base URL:', API_BASE_URL); // For debugging
+console.log('🌐 API Base URL:', API_BASE_URL); // For debugging
 
-// Helper function for API calls
 async function apiCall(endpoint: string, options: RequestInit = {}) {
   const token = typeof window !== 'undefined' ? localStorage.getItem('authToken') : null;
-  
+
   const headers = new Headers({
     'Content-Type': 'application/json',
-    ...(token && { 'Authorization': `Bearer ${token}` }),
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(options.headers || {})
   });
 
@@ -24,22 +23,21 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
   try {
     console.log(`Making API call to: ${API_BASE_URL}${endpoint}`, { method: config.method });
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    
-    // Handle non-JSON responses
+
     const contentType = response.headers.get('content-type');
     const isJson = contentType?.includes('application/json');
-    
+
     if (!isJson && !response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = isJson ? await response.json() : await response.text();
-    
+
     if (!response.ok) {
       const error = new Error(data?.message || 'API request failed') as any;
       error.response = {
         status: response.status,
-        data: data,
+        data,
         headers: Object.fromEntries(response.headers.entries())
       };
       throw error;
@@ -47,17 +45,8 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
 
     return data;
   } catch (error: any) {
-    console.error('API Error:', {
-      endpoint,
-      error: error.message,
-      status: error.response?.status,
-      data: error.response?.data
-    });
-    
-    // Enhance the error with more context
-    const enhancedError = new Error(error.message || 'Network error occurred');
-    (enhancedError as any).response = error.response;
-    throw enhancedError;
+    console.error('API Error:', { endpoint, error: error.message });
+    throw error;
   }
 }
 
@@ -68,12 +57,10 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(userData),
     });
-    
     if (data.token && typeof window !== 'undefined') {
       localStorage.setItem('authToken', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
     }
-    
     return data;
   },
 
@@ -82,12 +69,10 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
-    
     if (data.token && typeof window !== 'undefined') {
       localStorage.setItem('authToken', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
     }
-    
     return data;
   },
 
@@ -115,7 +100,7 @@ export const authAPI = {
       method: 'PUT',
       body: JSON.stringify({
         currentPassword: passwordData.currentPassword,
-        newPassword: passwordData.newPassword
+        newPassword: passwordData.newPassword,
       }),
     });
   },
@@ -126,7 +111,7 @@ export const groupsAPI = {
   create: async (groupData: any) => {
     return await apiCall('/groups', {
       method: 'POST',
-      body: JSON.stringify(groupData)
+      body: JSON.stringify(groupData),
     });
   },
 
@@ -140,7 +125,6 @@ export const groupsAPI = {
       const response = await apiCall(`/groups/${groupId}`);
       console.log('Group details response:', response);
       
-      // Handle different response structures
       if (response.success && response.group) {
         return response.group;
       } else if (response._id || response.id) {
@@ -155,15 +139,11 @@ export const groupsAPI = {
   },
 
   joinGroup: async (groupId: string) => {
-    return await apiCall(`/groups/${groupId}/join`, {
-      method: 'POST',
-    });
+    return await apiCall(`/groups/${groupId}/join`, { method: 'POST' });
   },
 
   leaveGroup: async (groupId: string) => {
-    return await apiCall(`/groups/${groupId}/leave`, {
-      method: 'POST',
-    });
+    return await apiCall(`/groups/${groupId}/leave`, { method: 'POST' });
   },
 
   removeMember: async (groupId: string, memberId: string) => {
@@ -177,11 +157,10 @@ export const groupsAPI = {
 export const expensesAPI = {
   add: async (expenseData: Omit<Expense, '_id' | 'createdAt'> & { date: string }): Promise<Expense> => {
     try {
-      // Transform the data to match backend expectations
       const backendData = {
         description: expenseData.description,
         amount: expenseData.amount,
-        groupId: expenseData.group, // Backend expects 'groupId', not 'group'
+        groupId: expenseData.group,
         category: expenseData.category,
         splitBetween: expenseData.splitBetween?.map(split => ({
           user: split.user._id || split.user.id,
@@ -201,7 +180,6 @@ export const expensesAPI = {
         throw new Error('Invalid response from server');
       }
 
-      // Return the expense from response (could be nested in response.expense)
       return response.expense || response;
     } catch (error) {
       console.error('Error in expensesAPI.add:', error);
@@ -241,7 +219,7 @@ export const expensesAPI = {
   markSettlement: async (settlementData: any) => {
     return await apiCall('/expenses/settle', {
       method: 'POST',
-      body: JSON.stringify(settlementData)
+      body: JSON.stringify(settlementData),
     });
-  }
+  },
 };
