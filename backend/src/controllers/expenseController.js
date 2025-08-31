@@ -2,9 +2,9 @@ const Expense = require('../models/Expense');
 const Group = require('../models/Group');
 const User = require('../models/User');
 
-// @desc    Add new expense
-// @route   POST /api/expenses
-// @access  Private
+// @desc Add new expense
+// @route POST /api/expenses
+// @access Private
 const addExpense = async (req, res) => {
   try {
     const { description, amount, groupId, splitBetween, category, notes } = req.body;
@@ -26,11 +26,10 @@ const addExpense = async (req, res) => {
 
     // If splitBetween is not provided, split equally among all members
     let finalSplitBetween = [];
-    
     if (splitBetween && splitBetween.length > 0) {
       // Validate that all split users are group members
       const memberIds = group.members.map(member => member.user._id.toString());
-      const invalidUsers = splitBetween.filter(split => 
+      const invalidUsers = splitBetween.filter(split =>
         !memberIds.includes(split.user)
       );
 
@@ -90,9 +89,9 @@ const addExpense = async (req, res) => {
       message: 'Expense added successfully',
       expense
     });
+
   } catch (error) {
     console.error('Add expense error:', error);
-    
     if (error.name === 'ValidationError') {
       const errors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -101,7 +100,7 @@ const addExpense = async (req, res) => {
         errors
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error while adding expense'
@@ -109,9 +108,9 @@ const addExpense = async (req, res) => {
   }
 };
 
-// @desc    Get expenses for a group
-// @route   GET /api/expenses/group/:groupId
-// @access  Private
+// @desc Get expenses for a group
+// @route GET /api/expenses/group/:groupId
+// @access Private
 const getGroupExpenses = async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -171,6 +170,7 @@ const getGroupExpenses = async (req, res) => {
         expenseCount: totalExpenses
       }
     });
+
   } catch (error) {
     console.error('Get group expenses error:', error);
     res.status(500).json({
@@ -180,9 +180,9 @@ const getGroupExpenses = async (req, res) => {
   }
 };
 
-// @desc    Get user's expenses across all groups
-// @route   GET /api/expenses/user
-// @access  Private
+// @desc Get user's expenses across all groups
+// @route GET /api/expenses/user
+// @access Private
 const getUserExpenses = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -231,6 +231,7 @@ const getUserExpenses = async (req, res) => {
       },
       summary: userSummary
     });
+
   } catch (error) {
     console.error('Get user expenses error:', error);
     res.status(500).json({
@@ -240,9 +241,9 @@ const getUserExpenses = async (req, res) => {
   }
 };
 
-// @desc    Calculate balances for a group
-// @route   GET /api/expenses/balance/:groupId
-// @access  Private
+// @desc Calculate balances for a group - FIXED VERSION
+// @route GET /api/expenses/balance/:groupId
+// @access Private
 const calculateGroupBalance = async (req, res) => {
   try {
     const { groupId } = req.params;
@@ -262,15 +263,14 @@ const calculateGroupBalance = async (req, res) => {
       });
     }
 
-    // Get all unsettled expenses for the group
-    const expenses = await Expense.find({ 
-      group: groupId, 
-      settled: false 
+    // CRITICAL FIX: Get ALL expenses for the group (including settlements)
+    const expenses = await Expense.find({
+      group: groupId
     }).populate('paidBy', 'name email');
 
     // Calculate balances
     const balances = {};
-    
+
     // Initialize balances for all group members
     group.members.forEach(member => {
       const memberId = member.user._id.toString();
@@ -284,10 +284,10 @@ const calculateGroupBalance = async (req, res) => {
       };
     });
 
-    // Calculate totals for each member
+    // Calculate totals for each member considering ALL expenses including settlements
     expenses.forEach(expense => {
       const paidById = expense.paidBy._id.toString();
-      
+
       // Add to total paid
       if (balances[paidById]) {
         balances[paidById].totalPaid += expense.amount;
@@ -317,6 +317,7 @@ const calculateGroupBalance = async (req, res) => {
       debts,
       groupTotal: group.totalExpenses
     });
+
   } catch (error) {
     console.error('Calculate group balance error:', error);
     res.status(500).json({
@@ -326,9 +327,9 @@ const calculateGroupBalance = async (req, res) => {
   }
 };
 
-// @desc    Update expense
-// @route   PUT /api/expenses/:expenseId
-// @access  Private
+// @desc Update expense
+// @route PUT /api/expenses/:expenseId
+// @access Private
 const updateExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
@@ -336,6 +337,7 @@ const updateExpense = async (req, res) => {
     const { description, amount, category, notes } = req.body;
 
     const expense = await Expense.findById(expenseId);
+
     if (!expense) {
       return res.status(404).json({
         success: false,
@@ -370,6 +372,7 @@ const updateExpense = async (req, res) => {
       message: 'Expense updated successfully',
       expense
     });
+
   } catch (error) {
     console.error('Update expense error:', error);
     res.status(500).json({
@@ -379,15 +382,16 @@ const updateExpense = async (req, res) => {
   }
 };
 
-// @desc    Delete expense
-// @route   DELETE /api/expenses/:expenseId
-// @access  Private
+// @desc Delete expense
+// @route DELETE /api/expenses/:expenseId
+// @access Private
 const deleteExpense = async (req, res) => {
   try {
     const { expenseId } = req.params;
     const userId = req.user.id;
 
     const expense = await Expense.findById(expenseId);
+
     if (!expense) {
       return res.status(404).json({
         success: false,
@@ -414,6 +418,7 @@ const deleteExpense = async (req, res) => {
       success: true,
       message: 'Expense deleted successfully'
     });
+
   } catch (error) {
     console.error('Delete expense error:', error);
     res.status(500).json({
@@ -431,7 +436,7 @@ const calculateUserSummary = async (userId) => {
       { $match: { paidBy: userId } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
-    
+
     // Total amount user owes
     const totalOwesResult = await Expense.aggregate([
       { $match: { 'splitBetween.user': userId } },
@@ -451,6 +456,7 @@ const calculateUserSummary = async (userId) => {
       youOwe: netBalance < 0 ? Math.abs(netBalance) : 0,
       youAreOwed: netBalance > 0 ? netBalance : 0
     };
+
   } catch (error) {
     console.error('Calculate user summary error:', error);
     return {
@@ -463,9 +469,9 @@ const calculateUserSummary = async (userId) => {
   }
 };
 
-// @desc    Get overall settlement data across all groups
-// @route   GET /api/expenses/settlements
-// @access  Private
+// @desc Get overall settlement data across all groups - FIXED VERSION
+// @route GET /api/expenses/settlements
+// @access Private
 const getOverallSettlements = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -481,15 +487,14 @@ const getOverallSettlements = async (req, res) => {
 
     // Process each group
     for (const group of groups) {
-      // Get unsettled expenses for this group
-      const expenses = await Expense.find({ 
-        group: group._id, 
-        settled: false 
+      // CRITICAL FIX: Get ALL expenses for this group (including settlements)
+      const expenses = await Expense.find({
+        group: group._id
       }).populate('paidBy', 'name email');
 
       // Calculate balances for this group
       const balances = {};
-      
+
       // Initialize balances for all group members
       group.members.forEach(member => {
         const memberId = member.user._id.toString();
@@ -503,10 +508,10 @@ const getOverallSettlements = async (req, res) => {
         };
       });
 
-      // Calculate totals for each member
+      // Calculate totals for each member considering ALL expenses including settlements
       expenses.forEach(expense => {
         const paidById = expense.paidBy._id.toString();
-        
+
         // Add to total paid
         if (balances[paidById]) {
           balances[paidById].totalPaid += expense.amount;
@@ -547,6 +552,7 @@ const getOverallSettlements = async (req, res) => {
             netBalance: 0
           };
         }
+
         userBalances[balance.userId].totalPaid += balance.totalPaid;
         userBalances[balance.userId].totalOwes += balance.totalOwes;
         userBalances[balance.userId].netBalance += balance.netBalance;
@@ -558,6 +564,7 @@ const getOverallSettlements = async (req, res) => {
       debts: allDebts,
       userBalances: Object.values(userBalances)
     });
+
   } catch (error) {
     console.error('Get overall settlements error:', error);
     res.status(500).json({
@@ -567,28 +574,26 @@ const getOverallSettlements = async (req, res) => {
   }
 };
 
-// @desc    Mark settlement as paid
-// @route   POST /api/expenses/settle
-// @access  Private
+// @desc Mark settlement as paid - UPDATED VERSION (allows any group member to mark as paid)
+// @route POST /api/expenses/settle
+// @access Private
 const markSettlement = async (req, res) => {
   try {
+    console.log('markSettlement request:', {
+      body: req.body,
+      user: req.user,
+      headers: req.headers
+    });
+
     const { fromUserId, toUserId, amount, groupId } = req.body;
     const userId = req.user.id;
 
-    // Verify user is involved in this settlement
-    if (userId !== fromUserId && userId !== toUserId) {
-      return res.status(403).json({
-        success: false,
-        message: 'You can only mark settlements you are involved in'
-      });
-    }
-
-    // Verify group exists and user is a member
+    // Verify group exists and user is a member (removed the restriction that user must be involved in settlement)
     const group = await Group.findOne({
       _id: groupId,
       'members.user': userId,
       isActive: true
-    });
+    }).populate('members.user', 'name email');
 
     if (!group) {
       return res.status(404).json({
@@ -597,9 +602,23 @@ const markSettlement = async (req, res) => {
       });
     }
 
-    // For now, we'll create a settlement record as an expense with special category
+    // Verify that both fromUser and toUser are members of this group
+    const groupMemberIds = group.members.map(member => member.user._id.toString());
+    
+    if (!groupMemberIds.includes(fromUserId) || !groupMemberIds.includes(toUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Both users must be members of this group'
+      });
+    }
+
+    // Get user names for the settlement description
+    const fromUser = group.members.find(member => member.user._id.toString() === fromUserId)?.user;
+    const toUser = group.members.find(member => member.user._id.toString() === toUserId)?.user;
+
+    // Create a settlement record as an expense with special category
     const settlement = new Expense({
-      description: `Settlement payment`,
+      description: `Settlement: Payment of ₹${amount} from ${fromUser?.name || 'Unknown'} to ${toUser?.name || 'Unknown'}`,
       amount: amount,
       paidBy: fromUserId,
       group: groupId,
@@ -613,16 +632,36 @@ const markSettlement = async (req, res) => {
 
     await settlement.save();
 
-    res.json({
+    // Populate the settlement data
+    await settlement.populate([
+      { path: 'paidBy', select: 'name email' },
+      { path: 'splitBetween.user', select: 'name email' },
+      { path: 'group', select: 'name' }
+    ]);
+
+    const result = {
       success: true,
-      message: 'Settlement marked as paid',
+      message: 'Settlement marked as paid successfully',
       settlement
-    });
+    };
+
+    console.log('Settlement created successfully:', result);
+    res.json(result);
+
   } catch (error) {
-    console.error('Mark settlement error:', error);
+    console.error('Mark settlement error:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      name: error.name,
+      body: req.body,
+      user: req.user
+    });
+
     res.status(500).json({
       success: false,
-      message: 'Server error while marking settlement'
+      message: error.message || 'Server error while marking settlement',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -631,7 +670,7 @@ const markSettlement = async (req, res) => {
 const generateSimplifiedDebts = (balances) => {
   const debts = [];
   const creditors = []; // People who are owed money (positive balance)
-  const debtors = [];   // People who owe money (negative balance)
+  const debtors = []; // People who owe money (negative balance)
 
   // Separate creditors and debtors
   Object.values(balances).forEach(balance => {
@@ -651,9 +690,8 @@ const generateSimplifiedDebts = (balances) => {
   while (i < creditors.length && j < debtors.length) {
     const creditor = creditors[i];
     const debtor = debtors[j];
-    
     const amount = Math.min(creditor.netBalance, debtor.netBalance);
-    
+
     if (amount > 0.01) {
       debts.push({
         from: {
@@ -666,13 +704,13 @@ const generateSimplifiedDebts = (balances) => {
         },
         amount: Number(amount.toFixed(2))
       });
+
+      creditor.netBalance -= amount;
+      debtor.netBalance -= amount;
+
+      if (creditor.netBalance < 0.01) i++;
+      if (debtor.netBalance < 0.01) j++;
     }
-
-    creditor.netBalance -= amount;
-    debtor.netBalance -= amount;
-
-    if (creditor.netBalance < 0.01) i++;
-    if (debtor.netBalance < 0.01) j++;
   }
 
   return debts;

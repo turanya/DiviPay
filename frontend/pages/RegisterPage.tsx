@@ -4,7 +4,13 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import { authAPI } from '../lib/api';
 
-const RegisterPage: React.FC<{ onLogin: () => void; onNavigateToLanding: () => void; onNavigateToLogin: () => void; }> = ({ onLogin, onNavigateToLanding, onNavigateToLogin }) => {
+interface RegisterPageProps {
+  onLogin?: () => void;
+  onNavigateToLanding: () => void;
+  onNavigateToLogin: () => void;
+}
+
+const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigateToLanding, onNavigateToLogin }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -34,10 +40,8 @@ const RegisterPage: React.FC<{ onLogin: () => void; onNavigateToLanding: () => v
       const response = await authAPI.register({ name, email, password });
       console.log('Registration successful:', response);
       
-      onLogin();
-      
-      // Navigate to dashboard using React Router
-      // navigate('/dashboard');
+      // Navigate to login page after successful registration
+      onNavigateToLogin();
     } catch (err: any) {
       setError(err.message || 'Registration failed');
     } finally {

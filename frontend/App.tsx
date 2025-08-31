@@ -16,13 +16,53 @@ import CreateGroupModal from './components/CreateGroupModal';
 import ProfileModal from './components/ProfileModal';
 import { authAPI, groupsAPI, expensesAPI } from './lib/api';
 
+// Error Boundary Component
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#0F2027] via-[#203A43] to-[#2C5364] text-white">
+          <div className="text-center p-8">
+            <h2 className="text-2xl font-bold mb-4">Something went wrong</h2>
+            <p className="mb-4">We encountered an error. Please refresh the page.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-[#20C997] hover:bg-[#1ba085] px-6 py-3 rounded-lg transition-colors"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 type Page = 'dashboard' | 'groups' | 'groupDetail' | 'addExpense' | 'history' | 'settlement';
 
 const App: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [groupLoading, setGroupLoading] = useState(false);
   const [groupError, setGroupError] = useState<string | null>(null);
@@ -38,54 +78,59 @@ const App: React.FC = () => {
     return group._id || group.id || '';
   };
 
+  // Fetch fresh group data
+  const fetchGroupData = useCallback(async (groupId: string) => {
+    try {
+      setGroupLoading(true);
+      setGroupError(null);
+
+      // First try to get fresh group details from API
+      const groupDetails = await groupsAPI.getGroupDetails(groupId);
+      
+      if (groupDetails) {
+        // Update the group in our local state
+        setGroups(prevGroups => {
+          const updatedGroups = [...prevGroups];
+          const existingGroupIndex = updatedGroups.findIndex(g => getGroupId(g) === groupId);
+          
+          if (existingGroupIndex >= 0) {
+            updatedGroups[existingGroupIndex] = groupDetails;
+          } else {
+            updatedGroups.push(groupDetails);
+          }
+          
+          return updatedGroups;
+        });
+        
+        setSelectedGroupId(groupId);
+        return groupDetails;
+      } else {
+        setGroupError('Group not found. It may have been deleted.');
+        return null;
+      }
+    } catch (error: any) {
+      console.error('Error fetching group details:', error);
+      if (error.response?.status === 404) {
+        setGroupError('Group not found. It may have been deleted.');
+      } else if (error.response?.status === 403) {
+        setGroupError('You do not have permission to view this group.');
+      } else {
+        setGroupError('Failed to load group. Please try again later.');
+      }
+      return null;
+    } finally {
+      setGroupLoading(false);
+    }
+  }, []);
+
   // Handle URL changes to update selected group
   useEffect(() => {
     const loadGroupData = async () => {
       if (location.pathname.startsWith('/groups/')) {
         const groupId = location.pathname.split('/groups/')[1];
-        if (groupId) {
+        if (groupId && isLoggedIn) {
           console.log('Loading group data for ID:', groupId);
-          setGroupLoading(true);
-          setGroupError(null);
-
-          try {
-            // First check if we already have the group in our state
-            const existingGroup = groups.find(g => getGroupId(g) === groupId);
-            if (existingGroup) {
-              console.log('Found group in local state:', existingGroup);
-              setSelectedGroupId(groupId);
-              setGroupLoading(false);
-              return;
-            }
-
-            // If not found, try to fetch it from the API
-            console.log('Group not in local state, fetching from API...');
-            const group = await groupsAPI.getGroupDetails(groupId);
-            console.log('Fetched group from API:', group);
-            
-            if (group) {
-              // Add the fetched group to our groups list
-              setGroups(prev => {
-                const exists = prev.some(g => getGroupId(g) === getGroupId(group));
-                return exists ? prev : [...prev, group];
-              });
-              setSelectedGroupId(groupId);
-            } else {
-              console.error('Group not found in API response');
-              setGroupError('Group not found. It may have been deleted.');
-            }
-          } catch (error: any) {
-            console.error('Error fetching group details:', error);
-            if (error.response?.status === 404) {
-              setGroupError('Group not found. It may have been deleted.');
-            } else if (error.response?.status === 403) {
-              setGroupError('You do not have permission to view this group.');
-            } else {
-              setGroupError('Failed to load group. Please try again later.');
-            }
-          } finally {
-            setGroupLoading(false);
-          }
+          await fetchGroupData(groupId);
         }
       } else if (location.pathname === '/groups') {
         // Clear selected group when on groups list
@@ -96,10 +141,8 @@ const App: React.FC = () => {
       }
     };
 
-    if (isLoggedIn) {
-      loadGroupData();
-    }
-  }, [location.pathname, groups.length, isLoggedIn]);
+    loadGroupData();
+  }, [location.pathname, isLoggedIn, fetchGroupData]);
 
   // Check if user is already logged in on app start
   useEffect(() => {
@@ -117,11 +160,6 @@ const App: React.FC = () => {
             const response = await groupsAPI.getUserGroups();
             const userGroups = Array.isArray(response?.groups) ? response.groups : [];
             setGroups(userGroups);
-            
-            const groupId = location.pathname.split('/groups/')[1];
-            if (groupId && userGroups.some(g => getGroupId(g) === groupId)) {
-              setSelectedGroupId(groupId);
-            }
           } catch (error) {
             console.error('Failed to fetch groups:', error);
             setGroups([]);
@@ -135,7 +173,7 @@ const App: React.FC = () => {
     };
 
     checkAuthStatus();
-  }, [location.pathname]);
+  }, []);
 
   const handleChangePassword = async (passwordData: { currentPassword?: string, newPassword?: string }) => {
     try {
@@ -151,15 +189,10 @@ const App: React.FC = () => {
       const response = await groupsAPI.getUserGroups();
       const userGroups = response.groups || [];
       setGroups(userGroups);
-      
-      const groupId = location.pathname.split('/groups/')[1];
-      if (groupId && userGroups.some(g => getGroupId(g) === groupId)) {
-        setSelectedGroupId(groupId);
-      }
     } catch (error) {
       console.error('Failed to fetch groups:', error);
     }
-  }, [location.pathname]);
+  }, []);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('authToken');
@@ -181,11 +214,6 @@ const App: React.FC = () => {
       const response = await groupsAPI.getUserGroups();
       const userGroups = response.groups || [];
       setGroups(userGroups);
-      
-      const groupId = location.pathname.split('/groups/')[1];
-      if (groupId && userGroups.some(g => getGroupId(g) === groupId)) {
-        setSelectedGroupId(groupId);
-      }
     } catch (error) {
       console.error('Failed to fetch groups after login:', error);
     }
@@ -222,34 +250,27 @@ const App: React.FC = () => {
       }
       return null;
     }).filter(Boolean);
-    
+
     try {
       setGroupLoading(true);
       const response = await groupsAPI.create({
         name: groupName.trim(),
-        description: memberData.length > 0 ? `Group with ${memberData.map(m => m.user.name).join(', ')}` : undefined,
+        description: memberData.length > 0 ? `Group with ${memberData.map(m => m?.user.name).join(', ')}` : undefined,
         members: memberData
       });
 
-      // Optimistic update
-      setGroups(prevGroups => [...prevGroups, {
-        ...response,
-        expenses: [],
-        totalExpenses: 0,
-        memberCount: memberData.length + 1, // +1 for the creator
-        userRole: 'admin',
-        isActive: true
-      }]);
+      // Refresh groups to get the latest data
+      await fetchUserGroups();
 
       setCreateGroupModalOpen(false);
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3000);
-      
+
       // Navigate to the new group
       if (response._id || response.id) {
         navigate(`/groups/${response._id || response.id}`);
       }
-      
+
       return response;
     } catch (error) {
       console.error('Failed to create group:', error);
@@ -257,7 +278,7 @@ const App: React.FC = () => {
     } finally {
       setGroupLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, fetchUserGroups]);
 
   const handleAddExpense = useCallback(async (expenseData: Omit<Expense, '_id' | 'date'> & { date: string }) => {
     const groupId = expenseData.group || selectedGroupId || '';
@@ -270,31 +291,6 @@ const App: React.FC = () => {
       throw new Error('Missing required expense information');
     }
 
-    // Create a temporary ID for optimistic update
-    const tempId = `temp-${Date.now()}`;
-    const tempExpense: Expense = {
-      ...expenseData,
-      _id: tempId,
-      date: new Date().toISOString(),
-      group: groupId,
-      splitBetween: expenseData.splitBetween || []
-    };
-
-    // Optimistic update
-    setGroups(prevGroups => 
-      prevGroups.map(group => {
-        if (group._id === groupId || group.id === groupId) {
-          return {
-            ...group,
-            expenses: [...(group.expenses || []), tempExpense],
-            totalExpenses: (group.totalExpenses || 0) + expenseData.amount,
-            updatedAt: new Date().toISOString()
-          };
-        }
-        return group;
-      })
-    );
-
     try {
       // Make the actual API call
       const response = await expensesAPI.add({
@@ -302,45 +298,21 @@ const App: React.FC = () => {
         group: groupId,
       });
 
-      // Update with server response
-      setGroups(prevGroups => 
-        prevGroups.map(group => {
-          if (group._id === groupId || group.id === groupId) {
-            // Remove temporary expense and add the server response
-            const filteredExpenses = (group.expenses || []).filter(exp => exp._id !== tempId);
-            return {
-              ...group,
-              expenses: [...filteredExpenses, response],
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return group;
-        })
-      );
-      
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 4000);
+
+      // Refresh the group data to show the new expense
+      await fetchGroupData(groupId);
+      
+      // Navigate back to the group page to show the new expense
+      navigate(`/groups/${groupId}`);
+
       return response;
     } catch (error) {
-      // Revert optimistic update on error
-      setGroups(prevGroups => 
-        prevGroups.map(group => {
-          if (group._id === groupId || group.id === groupId) {
-            return {
-              ...group,
-              expenses: (group.expenses || []).filter(exp => exp._id !== tempId),
-              totalExpenses: (group.totalExpenses || 0) - expenseData.amount,
-              updatedAt: new Date().toISOString()
-            };
-          }
-          return group;
-        })
-      );
-      
       console.error('Failed to add expense:', error);
       throw error; // Let the modal handle the error
     }
-  }, [selectedGroupId]);
+  }, [selectedGroupId, navigate, fetchGroupData]);
 
   const handleDeleteGroup = useCallback(async (groupId: string) => {
     if (window.confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
@@ -357,36 +329,20 @@ const App: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this expense?')) return;
 
     try {
-      // Optimistic update
-      if (groupId) {
-        setGroups(prevGroups => 
-          prevGroups.map(group => {
-            if (group._id === groupId || group.id === groupId) {
-              const expense = group.expenses?.find(exp => exp._id === expenseId || exp.id === expenseId);
-              const newExpenses = (group.expenses || []).filter(exp => exp._id !== expenseId && exp.id !== expenseId);
-              return {
-                ...group,
-                expenses: newExpenses,
-                totalExpenses: expense ? (group.totalExpenses || 0) - expense.amount : group.totalExpenses,
-                updatedAt: new Date().toISOString()
-              };
-            }
-            return group;
-          })
-        );
-      }
-
       await expensesAPI.delete(expenseId);
       
-      // Refresh groups to ensure consistency
-      await fetchUserGroups();
+      // Refresh the group data if we have a groupId
+      if (groupId) {
+        await fetchGroupData(groupId);
+      } else {
+        // Refresh all groups
+        await fetchUserGroups();
+      }
     } catch (error) {
       console.error('Failed to delete expense:', error);
       alert('Failed to delete expense. Please try again.');
-      // Re-fetch groups to revert any optimistic updates
-      await fetchUserGroups();
     }
-  }, [fetchUserGroups]);
+  }, [fetchGroupData, fetchUserGroups]);
 
   interface ProtectedRouteProps {
     children: React.ReactNode;
@@ -403,7 +359,8 @@ const App: React.FC = () => {
       };
       return <LoginPage {...loginProps} />;
     }
-    return <>{children}</>;
+
+    return <ErrorBoundary>{children}</ErrorBoundary>;
   };
 
   const selectedGroup = groups.find(g => getGroupId(g) === selectedGroupId);
@@ -413,186 +370,179 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <div className={appClasses}>
-        <div className="flex items-center justify-center h-screen">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#20C997] mb-4"></div>
-          <p className="text-white/70 ml-4">Loading DiviPay...</p>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-[#20C997] mb-4"></div>
+            <p className="text-xl">Loading DiviPay...</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={appClasses}>
-      {showConfetti && <Confetti />}
-      
-      <Routes>
-        {/* Public Routes */}
-        <Route path="/" element={<LandingPage onNavigateToLogin={() => navigate('/login')} onNavigateToRegister={() => navigate('/register')} />} />
-        <Route 
-          path="/login" 
-          element={
-            <LoginPage 
-              onLogin={handleLogin}
-              onNavigateToLanding={() => navigate('/')}
-              onNavigateToRegister={() => navigate('/register')}
-            />
-          } 
-        />
-        <Route 
-          path="/register" 
-          element={
-            <RegisterPage 
-              onLogin={handleLogin}
-              onNavigateToLanding={() => navigate('/')}
-              onNavigateToLogin={() => navigate('/login')}
-            />
-          } 
-        />
+    <ErrorBoundary>
+      <div className={appClasses}>
+        {showConfetti && <Confetti />}
+        
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/" element={<LandingPage onNavigateToLogin={() => navigate('/login')} onNavigateToRegister={() => navigate('/register')} />} />
+          <Route 
+            path="/login" 
+            element={
+              <LoginPage 
+                onLogin={handleLogin}
+                onNavigateToLanding={() => navigate('/')}
+                onNavigateToRegister={() => navigate('/register')}
+              />
+            } 
+          />
+          <Route 
+            path="/register" 
+            element={
+              <RegisterPage 
+                onNavigateToLanding={() => navigate('/')}
+                onNavigateToLogin={() => navigate('/login')}
+              />
+            } 
+          />
 
-        {/* Protected Routes */}
-        <Route 
-          path="/dashboard" 
-          element={
-            <ProtectedRoute>
-              <MainLayout 
-                currentPage="dashboard" 
-                onNavigateToPage={(page) => navigate(`/${page}`)} 
-                onOpenProfileModal={() => setProfileModalOpen(true)}
-                onLogout={handleLogout}
-              >
-                <Dashboard groups={groups} />
-              </MainLayout>
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/groups" 
-          element={
-            <ProtectedRoute>
-              <MainLayout 
-                currentPage="groups" 
-                onNavigateToPage={(page) => navigate(`/${page}`)} 
-                onOpenProfileModal={() => setProfileModalOpen(true)}
-                onLogout={handleLogout}
-              >
-                <GroupsPage 
-                  groups={groups}
-                  onSelectGroup={handleSelectGroup}
-                  onOpenCreateGroupModal={() => setCreateGroupModalOpen(true)}
-                  onDeleteGroup={handleDeleteGroup}
-                  isLoading={loading}
-                />
-              </MainLayout>
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/groups/:groupId" 
-          element={
-            <ProtectedRoute>
-              <MainLayout 
-                currentPage="groups" 
-                onNavigateToPage={(page) => navigate(`/${page}`)} 
-                onOpenProfileModal={() => setProfileModalOpen(true)}
-                onLogout={handleLogout}
-              >
-                <GroupPage 
-                  group={selectedGroup}
-                  onBack={handleBackToGroups}
-                  onAddExpense={() => navigate('/addExpense')}
-                  isLoading={groupLoading}
-                  error={groupError}
-                />
-              </MainLayout>
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/addExpense" 
-          element={
-            <ProtectedRoute>
-              <MainLayout 
-                currentPage="addExpense" 
-                onNavigateToPage={(page) => navigate(`/${page}`)}
-                onOpenProfileModal={() => setProfileModalOpen(true)}
-                onLogout={handleLogout}>
-                <AddExpensePage 
-                  groups={groups}
-                  onAddExpense={handleAddExpense}
-                />
-              </MainLayout>
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/history" 
-          element={
-            <ProtectedRoute>
-              <MainLayout 
-                currentPage="history" 
-                onNavigateToPage={(page) => navigate(`/${page}`)}
-                onOpenProfileModal={() => setProfileModalOpen(true)}
-                onLogout={handleLogout}>
-                <HistoryPage 
-                  groups={groups}
-                  onDeleteExpense={handleDeleteExpense}
-                />
-              </MainLayout>
-            </ProtectedRoute>
-          } 
-        />
-        
-        <Route 
-          path="/settlement" 
-          element={
-            <ProtectedRoute>
-              <MainLayout 
-                currentPage="settlement" 
-                onNavigateToPage={(page) => navigate(`/${page}`)}
-                onOpenProfileModal={() => setProfileModalOpen(true)}
-                onLogout={handleLogout}>
-                <SettlementPage groups={groups} />
-              </MainLayout>
-            </ProtectedRoute>
-          } 
-        />
+          {/* Protected Routes */}
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <MainLayout
+                  currentPage="dashboard"
+                  onNavigate={(page: Page) => navigate(`/${page}`)}
+                  onOpenProfileModal={() => setProfileModalOpen(true)}
+                  onLogout={handleLogout}
+                >
+                  <Dashboard />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/groups" 
+            element={
+              <ProtectedRoute>
+                <MainLayout
+                  currentPage="groups"
+                  onNavigate={(page: Page) => navigate(`/${page}`)}
+                  onOpenProfileModal={() => setProfileModalOpen(true)}
+                  onLogout={handleLogout}
+                >
+                  <GroupsPage
+                    groups={groups}
+                    onSelectGroup={handleSelectGroup}
+                    onOpenCreateGroupModal={() => setCreateGroupModalOpen(true)}
+                    onDeleteGroup={handleDeleteGroup}
+                    isLoading={loading}
+                  />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/groups/:groupId" 
+            element={
+              <ProtectedRoute>
+                <MainLayout
+                  currentPage="groupDetail"
+                  onNavigate={(page: Page) => navigate(`/${page}`)}
+                  onOpenProfileModal={() => setProfileModalOpen(true)}
+                  onLogout={handleLogout}
+                >
+                  <GroupPage
+                    onRefreshGroup={() => selectedGroupId && fetchGroupData(selectedGroupId)}
+                  />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/addExpense" 
+            element={
+              <ProtectedRoute>
+                <MainLayout
+                  currentPage="addExpense"
+                  onNavigate={(page: Page) => navigate(`/${page}`)}
+                  onOpenProfileModal={() => setProfileModalOpen(true)}
+                  onLogout={handleLogout}
+                >
+                  <AddExpensePage groups={groups} onAddExpense={handleAddExpense} />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/history" 
+            element={
+              <ProtectedRoute>
+                <MainLayout
+                  currentPage="history"
+                  onNavigate={(page: Page) => navigate(`/${page}`)}
+                  onOpenProfileModal={() => setProfileModalOpen(true)}
+                  onLogout={handleLogout}
+                >
+                  <HistoryPage />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/settlement" 
+            element={
+              <ProtectedRoute>
+                <MainLayout
+                  currentPage="settlement"
+                  onNavigate={(page: Page) => navigate(`/${page}`)}
+                  onOpenProfileModal={() => setProfileModalOpen(true)}
+                  onLogout={handleLogout}
+                >
+                  <SettlementPage />
+                </MainLayout>
+              </ProtectedRoute>
+            } 
+          />
 
-        {/* 404 Route */}
-        <Route 
-          path="*" 
-          element={
-            <div className="flex flex-col items-center justify-center min-h-screen p-4">
-              <h1 className="text-4xl font-bold mb-4">404 - Page Not Found</h1>
-              <button
-                onClick={() => navigate('/')}
-                className="bg-[#20C997] hover:bg-[#1ba085] px-6 py-3 rounded-lg transition-colors"
-              >
-                Go Home
-              </button>
-            </div>
-          } 
-        />
-      </Routes>
+          {/* 404 Route */}
+          <Route 
+            path="*" 
+            element={
+              <div className="flex items-center justify-center min-h-screen">
+                <div className="text-center">
+                  <h1 className="text-4xl font-bold mb-4">404 - Page Not Found</h1>
+                  <button
+                    onClick={() => navigate('/')}
+                    className="bg-[#20C997] hover:bg-[#1ba085] px-6 py-3 rounded-lg transition-colors"
+                  >
+                    Go Home
+                  </button>
+                </div>
+              </div>
+            } 
+          />
+        </Routes>
 
-      {/* Modals */}
-      {isCreateGroupModalOpen && (
-        <CreateGroupModal
-          onClose={() => setCreateGroupModalOpen(false)}
-          onCreate={handleCreateGroup}
-        />
-      )}
+        {/* Modals */}
+        {isCreateGroupModalOpen && (
+          <CreateGroupModal
+            onClose={() => setCreateGroupModalOpen(false)}
+            onCreate={handleCreateGroup}
+          />
+        )}
 
-      <ProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setProfileModalOpen(false)}
-        user={currentUser}
-        onChangePassword={handleChangePassword}
-      />
-    </div>
+        <ProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setProfileModalOpen(false)}
+          user={currentUser}
+          onChangePassword={handleChangePassword}
+        />
+      </div>
+    </ErrorBoundary>
   );
 };
 

@@ -4,7 +4,7 @@ import Sidebar from './Sidebar';
 interface MainLayoutProps {
   children: React.ReactNode;
   currentPage: string;
-  onNavigateToPage: (page: string) => void;  // CHANGED: was onNavigate
+  onNavigate: (page: string) => void;
   onLogout: () => void;
   onOpenProfileModal: () => void;  // CHANGED: was onOpenProfile
 }
@@ -12,15 +12,15 @@ interface MainLayoutProps {
 const MainLayout: React.FC<MainLayoutProps> = ({ 
   children, 
   currentPage, 
-  onNavigateToPage,  // CHANGED: was onNavigate
+  onNavigate,
   onLogout, 
-  onOpenProfileModal  // CHANGED: was onOpenProfile
+  onOpenProfileModal
 }) => {
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
       <Sidebar 
         currentPage={currentPage}
-        onNavigate={onNavigateToPage}  // Pass to Sidebar
+        onNavigate={onNavigate}
         onLogout={onLogout}
         onOpenProfileModal={onOpenProfileModal}
       />

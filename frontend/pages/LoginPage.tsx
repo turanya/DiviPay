@@ -5,7 +5,7 @@ import Card from '../components/Card';
 import { authAPI } from '../lib/api';
 
 const LoginPage: React.FC<{ onLogin: () => void; onNavigateToLanding: () => void; onNavigateToRegister: () => void; }> = ({ onLogin, onNavigateToLanding, onNavigateToRegister }) => {
-  const [email, setEmail] = useState('demo@divipay.app');
+  const [email, setEmail] = useState('Please enter your email');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
