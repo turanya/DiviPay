@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./src/config/database');
@@ -13,13 +14,26 @@ const app = express();
 // Connect to database
 connectDB();
 
-// CORS configuration for your frontend
+// CORS configuration - UPDATE THIS WITH YOUR VERCEL URL
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173', 
+  'http://127.0.0.1:5173',
+  'https://your-app-name.vercel.app', // Replace with your actual Vercel URL
+  'https://divipay.vercel.app' // Example - use your real domain
+];
+
 const corsOptions = {
-  origin: [
-    'http://localhost:3000',  // Next.js default (keep for compatibility)
-    'http://localhost:5173',  // Add this for Vite
-    'http://127.0.0.1:5173',  // Add this as alternative
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -43,11 +57,12 @@ app.use('/api/expenses', expenseRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.json({
     success: true,
     message: '🚀 DiviPay Backend is running!',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: '1.0.0',
+    cors: allowedOrigins
   });
 });
 
@@ -78,7 +93,7 @@ app.use((err, req, res, next) => {
       errors
     });
   }
-  
+
   // Mongoose duplicate key error
   if (err.code === 11000) {
     return res.status(400).json({
@@ -86,7 +101,7 @@ app.use((err, req, res, next) => {
       message: 'Duplicate field value entered'
     });
   }
-  
+
   // JWT errors
   if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
@@ -94,7 +109,15 @@ app.use((err, req, res, next) => {
       message: 'Invalid token'
     });
   }
-  
+
+  // CORS error
+  if (err.message.includes('CORS')) {
+    return res.status(403).json({
+      success: false,
+      message: 'CORS error - origin not allowed'
+    });
+  }
+
   // Default error
   res.status(err.statusCode || 500).json({
     success: false,
@@ -104,21 +127,22 @@ app.use((err, req, res, next) => {
 
 // Handle 404 routes
 app.use('*', (req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
-    message: `Route ${req.originalUrl} not found` 
+    message: `Route ${req.originalUrl} not found`
   });
 });
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`
 🚀 DiviPay Backend Server Started!
 📍 Port: ${PORT}
 🌍 Environment: ${process.env.NODE_ENV || 'development'}
 📅 Started at: ${new Date().toISOString()}
 🔗 Health Check: http://localhost:${PORT}/api/health
+🌐 CORS Origins: ${allowedOrigins.join(', ')}
   `);
 });
 

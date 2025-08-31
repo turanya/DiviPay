@@ -1,8 +1,9 @@
 import { Expense } from '../types';
 
-const API_BASE_URL = process.env.NODE_ENV === 'production'
-  ? 'https://your-backend-url.com/api'
-  : 'http://localhost:5000/api';
+// Use environment variable for production, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+
+console.log('API Base URL:', API_BASE_URL); // For debugging
 
 // Helper function for API calls
 async function apiCall(endpoint: string, options: RequestInit = {}) {
@@ -67,10 +68,12 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(userData),
     });
+    
     if (data.token && typeof window !== 'undefined') {
       localStorage.setItem('authToken', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
     }
+    
     return data;
   },
 
@@ -79,10 +82,12 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
+    
     if (data.token && typeof window !== 'undefined') {
       localStorage.setItem('authToken', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
     }
+    
     return data;
   },
 
@@ -170,7 +175,7 @@ export const groupsAPI = {
 
 // Expenses API calls
 export const expensesAPI = {
-  add: async (expenseData: Omit<Expense, '_id'> & { date: string }): Promise<Expense> => {
+  add: async (expenseData: Omit<Expense, '_id' | 'createdAt'> & { date: string }): Promise<Expense> => {
     try {
       // Transform the data to match backend expectations
       const backendData = {
@@ -189,8 +194,9 @@ export const expensesAPI = {
         method: 'POST',
         body: JSON.stringify(backendData),
       });
-      console.log('Backend response:', response);
 
+      console.log('Backend response:', response);
+      
       if (!response || (!response._id && !response.expense?._id)) {
         throw new Error('Invalid response from server');
       }
